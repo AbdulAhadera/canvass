@@ -2,22 +2,28 @@ import { useRef, useEffect, useState } from "react";
 import { BiSolidPencil } from "react-icons/bi";
 import { FaRegSquareFull } from "react-icons/fa6";
 import { GoCircle } from "react-icons/go";
-import { IoIosArrowRoundForward } from "react-icons/io";
+import { FaLongArrowAltRight } from "react-icons/fa";
 import { IoRemoveOutline } from "react-icons/io5";
 import { TbOvalVertical } from "react-icons/tb";
 import { BiUndo } from "react-icons/bi";
+import { CiEraser } from "react-icons/ci";
+import iro from '@jaames/iro';
 import './App.css';
 
 function App() {
   const canvasRef = useRef(null);
   const contextRef = useRef(null);
+  const colorPickerRef = useRef(null);
 
   const [isDrawing, setIsDrawing] = useState(false);
   const [paths, setPaths] = useState([]);
   const [lineWidth, setLineWidth] = useState(2);
-  const [drawingMode, setDrawingMode] = useState('freehand')
+  const [drawingMode, setDrawingMode] = useState('freehand');
   const [lineColor, setLineColor] = useState("black");
   const [startPosition, setStartPosition] = useState({ x: 0, y: 0 });
+  const [activeTool, setActiveTool] = useState('freehand');
+
+  
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -35,7 +41,24 @@ function App() {
     context.lineWidth = lineWidth;
     contextRef.current = context;
 
-  }, []);
+    // Clear previous instances if any
+    if (colorPickerRef.current) {
+      colorPickerRef.current.innerHTML = '';
+    }
+
+    // Initialize the color picker
+    const colorPicker = new iro.ColorPicker(colorPickerRef.current, {
+      width: 150,
+      color: "#fff",
+    });
+
+    colorPicker.on('color:change', (color) => {
+      handleColor({ target: { value: color.hexString } });
+    });
+
+    getCoordinates();
+
+  }, []); // Empty dependency array ensures this runs only once
 
   useEffect(() => {
     if (contextRef.current) {
@@ -43,25 +66,26 @@ function App() {
     }
   }, [lineWidth]);
 
+  const resetCanvas = () => {
+    localStorage.clear();    
+    window.location.reload();
+  }
   const startDrawing = ({ nativeEvent }) => {
     const { offsetX, offsetY } = nativeEvent;
     setIsDrawing(true);
 
-    if (drawingMode === 'freehand') {
+    if (drawingMode === 'freehand' || drawingMode === 'eraser') {
       contextRef.current.beginPath();
       contextRef.current.moveTo(offsetX, offsetY);
-      setPaths((prevPaths) => [...prevPaths, { type: "freehand", color: lineColor, width: lineWidth, coordinates: [] }]);
+      setPaths((prevPaths) => [...prevPaths, { type: drawingMode, color: lineColor, width: lineWidth, coordinates: [] }]);
     } else if (drawingMode === "line" || drawingMode === "rectangle" || drawingMode === "circle" || drawingMode === "arrow" || drawingMode === "ellipse") {
       setStartPosition({ x: offsetX, y: offsetY });
     }
   };
-
   const finishDrawing = ({ nativeEvent }) => {
     if (isDrawing) {
       setIsDrawing(false);
     }
-
-    // Saving all shapes and design in LocalStorage
 
     //---->Line
     if (drawingMode === 'line') {
@@ -82,12 +106,17 @@ function App() {
         const updatedPaths = [...prevPaths, newPath];
         localStorage.setItem('paths', JSON.stringify(updatedPaths));
         return updatedPaths;
-      })
+      });
 
       contextRef.current.beginPath();
-      contextRef.current.
-
+      contextRef.current.moveTo(x, y);
+      contextRef.current.lineTo(offsetX, offsetY);
+      contextRef.current.strokeStyle = lineColor;
+      contextRef.current.lineWidth = lineWidth;
+      contextRef.current.stroke();
+      contextRef.current.closePath();
     }
+
     //--->Rectangle
     if (drawingMode === 'rectangle') {
       const { offsetX, offsetY } = nativeEvent;
@@ -116,6 +145,7 @@ function App() {
       contextRef.current.stroke();
       contextRef.current.closePath();
     }
+
     //--->Circle 
     else if (drawingMode === 'circle') {
       const { offsetX, offsetY } = nativeEvent;
@@ -134,7 +164,7 @@ function App() {
 
       setPaths((prevPaths) => {
         const updatedPaths = [...prevPaths, newPath];
-        localStorage.setItem('paths', JSON.stringify(updatedPaths)); // Save paths to local storage
+        localStorage.setItem('paths', JSON.stringify(updatedPaths));
         return updatedPaths;
       });
 
@@ -145,6 +175,7 @@ function App() {
       contextRef.current.stroke();
       contextRef.current.closePath();
     }
+
     //---->Arrow
     else if (drawingMode === 'arrow') {
       const { offsetX, offsetY } = nativeEvent;
@@ -160,7 +191,6 @@ function App() {
         endY: offsetY,
       };
 
-
       setPaths((prevPaths) => {
         const updatedPaths = [...prevPaths, newPath];
         localStorage.setItem('paths', JSON.stringify(updatedPaths));
@@ -168,10 +198,10 @@ function App() {
       });
 
       drawArrow(x, y, offsetX, offsetY, lineColor, lineWidth);
-
     }
+
     //---->Ellipse
-    if (drawingMode === 'ellipse') {
+    else if (drawingMode === 'ellipse') {
       const { offsetX, offsetY } = nativeEvent;
       const { x, y } = startPosition;
 
@@ -195,15 +225,40 @@ function App() {
         localStorage.setItem('paths', JSON.stringify(updatedPaths));
         return updatedPaths;
       });
+
+      contextRef.current.beginPath();
+      contextRef.current.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
+      contextRef.current.strokeStyle = lineColor;
+      contextRef.current.lineWidth = lineWidth;
+      contextRef.current.stroke();
+      contextRef.current.closePath();
+    }
+
+    //---->Eraser
+    else if (drawingMode === 'eraser') {
+      const { offsetX, offsetY } = nativeEvent;
+
+      const newPath = {
+        type: "eraser",
+        color: "white", // Assuming your canvas background is white
+        width: lineWidth * 2, // Make the eraser larger
+        coordinates: [],
+      };
+
+      setPaths((prevPaths) => {
+        const updatedPaths = [...prevPaths, newPath];
+        localStorage.setItem('paths', JSON.stringify(updatedPaths));
+        return updatedPaths;
+      });
     }
   };
-
   const draw = ({ nativeEvent }) => {
     if (!isDrawing) return;
 
     const { offsetX, offsetY } = nativeEvent;
+
     //---Draw freehand---//
-    if (drawingMode === 'freehand') {
+    if (drawingMode === 'freehand' || drawingMode === 'eraser') {
       setPaths((prevPaths) => {
         const newPaths = [...prevPaths];
         const currentPath = newPaths[newPaths.length - 1];
@@ -213,8 +268,24 @@ function App() {
       });
 
       contextRef.current.lineTo(offsetX, offsetY);
+      contextRef.current.strokeStyle = drawingMode === 'eraser' ? "white" : lineColor; // Use white for eraser
+      contextRef.current.lineWidth = drawingMode === 'eraser' ? lineWidth * 2 : lineWidth;
       contextRef.current.stroke();
     }
+
+    //---Draw Line---//
+    else if (drawingMode === 'line') {
+      const { x, y } = startPosition;
+      redrawCanvas(paths);
+      contextRef.current.beginPath();
+      contextRef.current.moveTo(x, y);
+      contextRef.current.lineTo(offsetX, offsetY);
+      contextRef.current.strokeStyle = lineColor;
+      contextRef.current.lineWidth = lineWidth;
+      contextRef.current.stroke();
+      contextRef.current.closePath();
+    }
+
     //---Draw rectangle---//
     else if (drawingMode === 'rectangle') {
       const { x, y } = startPosition;
@@ -226,6 +297,7 @@ function App() {
       contextRef.current.stroke();
       contextRef.current.closePath();
     }
+
     //---Draw Circle---//
     else if (drawingMode === 'circle') {
       const { x, y } = startPosition;
@@ -238,14 +310,16 @@ function App() {
       contextRef.current.stroke();
       contextRef.current.closePath();
     }
+
     //---Draw Arrow---//
     else if (drawingMode === 'arrow') {
       const { x, y } = startPosition;
       redrawCanvas(paths);
       drawArrow(x, y, offsetX, offsetY);
     }
+
     //---Draw Ellipse---//
-    if (drawingMode === 'ellipse') {
+    else if (drawingMode === 'ellipse') {
       const { x, y } = startPosition;
       redrawCanvas(paths);
 
@@ -262,18 +336,15 @@ function App() {
       contextRef.current.closePath();
     }
   };
-
   const handleLineWidth = (event) => {
     setLineWidth(event.target.value);
   };
-
   const handleColor = (event) => {
     setLineColor(event.target.value);
     if (contextRef.current) {
       contextRef.current.strokeStyle = event.target.value;
     }
   };
-
   const getCoordinates = () => {
     const storedPaths = localStorage.getItem('paths');
     if (storedPaths) {
@@ -282,7 +353,6 @@ function App() {
       redrawCanvas(parsedPaths);
     }
   };
-
   const redrawCanvas = (paths) => {
     const context = contextRef.current;
     context.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
@@ -296,6 +366,15 @@ function App() {
         path.coordinates.forEach(({ offsetX, offsetY }) => {
           context.lineTo(offsetX, offsetY);
         });
+        context.stroke();
+        context.closePath();
+      }
+      else if (path.type === 'line') {
+        context.beginPath();
+        context.moveTo(path.startX, path.startY);
+        context.lineTo(path.endX, path.endY);
+        context.strokeStyle = path.color;
+        context.lineWidth = path.width;
         context.stroke();
         context.closePath();
       }
@@ -319,16 +398,26 @@ function App() {
         drawArrow(path.startX, path.startY, path.endX, path.endY, path.color, path.width);
       }
       else if (path.type === 'ellipse') {
-        contextRef.current.beginPath();
-        contextRef.current.ellipse(path.centerX, path.centerY, path.radiusX, path.radiusY, 0, 0, 2 * Math.PI);
-        contextRef.current.strokeStyle = path.color;
-        contextRef.current.lineWidth = path.width;
-        contextRef.current.stroke();
-        contextRef.current.closePath();
+        context.beginPath();
+        context.ellipse(path.centerX, path.centerY, path.radiusX, path.radiusY, 0, 0, 2 * Math.PI);
+        context.strokeStyle = path.color;
+        context.lineWidth = path.width;
+        context.stroke();
+        context.closePath();
+      }
+      else if (path.type === 'eraser' && path.coordinates.length > 0) {
+        context.beginPath();
+        context.strokeStyle = "white"; // Assuming the background is white
+        context.lineWidth = path.width;
+        context.moveTo(path.coordinates[0].offsetX, path.coordinates[0].offsetY);
+        path.coordinates.forEach(({ offsetX, offsetY }) => {
+          context.lineTo(offsetX, offsetY);
+        });
+        context.stroke();
+        context.closePath();
       }
     });
   };
-
   // Functionality for drawing Arrow its head and tails
   const drawArrow = (fromX, fromY, toX, toY, pathColor, pathWidth) => {
     const headLength = 15; // Head length
@@ -350,45 +439,58 @@ function App() {
     contextRef.current.stroke();
     contextRef.current.closePath();
   };
-
   const undo = () => {
     setPaths((prevPaths) => {
-      if (prevPaths.length === 0) return prevPaths; // koi path nhai to action bhi nhi
+      if (prevPaths.length === 0) return prevPaths;
 
-      const updatedPaths = prevPaths.slice(0, -1); // paths get krke last wala ura do
+      const updatedPaths = prevPaths.slice(0, -1);
 
-      localStorage.setItem('paths', JSON.stringify(updatedPaths)); // again update local storage
+      localStorage.setItem('paths', JSON.stringify(updatedPaths));
 
-      redrawCanvas(updatedPaths); // redraw canvas without last part
+      redrawCanvas(updatedPaths);
       return updatedPaths;
     });
   };
-  // redo wala task baki hai
 
   const setFreehandMode = () => {
     setDrawingMode('freehand');
+    setActiveTool('freehand');
   };
-
   const setRectangleMode = () => {
     setDrawingMode('rectangle');
+    setActiveTool('rectangle');
   };
   const setCircleMode = () => {
     setDrawingMode('circle');
+    setActiveTool('circle');
   };
   const setArrowMode = () => {
     setDrawingMode('arrow');
+    setActiveTool('arrow');
   };
   const setEllipseMode = () => {
     setDrawingMode('ellipse');
+    setActiveTool('ellipse');
   };
   const setLineMode = () => {
-    setDrawingMode('line')
+    setDrawingMode('line');
+    setActiveTool('line');
+  };
+  const setEraserMode = () => {
+    setDrawingMode('eraser');
+    setActiveTool('eraser');
   };
 
   return (
     <>
       <div className="main">
-        <div className="tools">
+
+        <div className="tools-side">
+          <p className="color-picker-text">Choose Color</p>
+          <div ref={colorPickerRef} className="color-picker"></div>
+
+          <p className="color-picker-text">Choose Stroke</p>
+
           <select className="dropdown" value={lineWidth} onChange={handleLineWidth}>
             <option value={1}>Stroke</option>
             <option value={2}>2 px</option>
@@ -396,38 +498,49 @@ function App() {
             <option value={6}>6 px</option>
             <option value={8}>8 px</option>
           </select>
+          {/* 
+          <p className="color-picker-text">Set Opacity</p>
+          <input type="range" className="range" value={1} min={0.1} max={1}/> */}
 
-          <div className="color-picker">
-            <input
-              className="color-box"
-              type="color"
-              value={lineColor}
-              onChange={handleColor}
-            />
+          <div className="button-side-panel">
+            <button className="button-restore" onClick={getCoordinates}>Restore</button>
+            <button className="button-undo" onClick={undo}><BiUndo /></button>
           </div>
-          <button className="button" onClick={setFreehandMode}>
-            <BiSolidPencil />
-          </button>
-          <button className="button" onClick={setLineMode}>
-            <IoRemoveOutline />
-          </button>
-          <button className="button" onClick={setRectangleMode}>
-            <FaRegSquareFull />
-          </button>
-          <button className="button" onClick={setCircleMode}>
-            <GoCircle />
-          </button>
-          <button className="button" onClick={setArrowMode}>
-            <IoIosArrowRoundForward />
-          </button>
-          <button className="button" onClick={setEllipseMode}>
-            <TbOvalVertical />
-          </button>
-          <button className="button" onClick={undo}>
-            <BiUndo />
-          </button>
+          <button className="button-reset" onClick={resetCanvas}>Reset Canvas</button>
 
-          <button className="button-get" onClick={getCoordinates}>Get Last</button>
+
+        </div>
+
+
+
+        <div className="tools-top">
+          <div className="all-tools">
+            <button className={`button ${activeTool === 'freehand' ? 'active' : ''}`} onClick={setFreehandMode}>
+              <BiSolidPencil className="icon" />
+            </button>
+            <button className={`button ${activeTool === 'line' ? 'active' : ''}`} onClick={setLineMode}>
+              <IoRemoveOutline className="icon" />
+            </button>
+            <button className={`button ${activeTool === 'rectangle' ? 'active' : ''}`} onClick={setRectangleMode}>
+              <FaRegSquareFull className="icon" />
+            </button>
+            <button className={`button ${activeTool === 'circle' ? 'active' : ''}`} onClick={setCircleMode}>
+              <GoCircle className="icon" />
+            </button>
+            <button className={`button ${activeTool === 'arrow' ? 'active' : ''}`} onClick={setArrowMode}>
+              <FaLongArrowAltRight className="icon" />
+            </button>
+            <button className={`button ${activeTool === 'ellipse' ? 'active' : ''}`} onClick={setEllipseMode}>
+              <TbOvalVertical className="icon" />
+            </button>
+            <button className={`button ${activeTool === 'eraser' ? 'active' : ''}`} onClick={setEraserMode}>
+              <CiEraser className="icon" />
+            </button>
+            <button className={`button ${activeTool === 'undo' ? 'active' : ''}`} onClick={undo}>
+              <BiUndo className="icon" />
+            </button>
+          </div>
+
         </div>
 
         <div className="canvas">
@@ -437,7 +550,6 @@ function App() {
             onMouseMove={draw}
             ref={canvasRef}
           />
-          <line x1="0" y1="80" x2="100" y2="20" stroke="black" />
         </div>
       </div>
     </>
